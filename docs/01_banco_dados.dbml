@@ -1,0 +1,187 @@
+// EduTracker - Database Schema (DBML)
+// Database: PostgreSQL (Supabase)
+// ORM: DrizzleORM
+
+// ============================================
+// AUTENTICAÇÃO E USUÁRIOS
+// ============================================
+
+Table users {
+  id uuid [pk, default: `gen_random_uuid()`]
+  email varchar(255) [unique, not null]
+  full_name varchar(255)
+  first_name varchar(100)
+  last_name varchar(100)
+  password_hash varchar(255) [note: 'null se OAuth']
+  auth_provider enum('email', 'google') [default: 'email']
+  email_verified boolean [default: false]
+  email_verified_at timestamp
+  avatar_url varchar(500)
+  bio text [note: 'máximo 500 caracteres']
+  timezone varchar(50) [default: 'GMT-3']
+  plan enum('free', 'pro', 'enterprise') [default: 'free']
+  plan_active_until timestamp
+  last_login_at timestamp
+  created_at timestamp [default: `now()`]
+  updated_at timestamp [default: `now()`]
+  
+  indexes {
+    email [unique]
+    email_verified
+    auth_provider
+  }
+}
+
+Table email_verification_tokens {
+  id uuid [pk, default: `gen_random_uuid()`]
+  user_id uuid [ref: > users.id, not null]
+  token varchar(255) [unique, not null]
+  expires_at timestamp [not null]
+  created_at timestamp [default: `now()`]
+  
+  indexes {
+    user_id
+    token
+    expires_at
+  }
+}
+
+Table password_reset_tokens {
+  id uuid [pk, default: `gen_random_uuid()`]
+  user_id uuid [ref: > users.id, not null]
+  token varchar(255) [unique, not null]
+  expires_at timestamp [not null]
+  created_at timestamp [default: `now()`]
+  
+  indexes {
+    user_id
+    token
+    expires_at
+  }
+}
+
+// ============================================
+// ESTRUTURA EDUCACIONAL
+// ============================================
+
+Table areas {
+  id uuid [pk, default: `gen_random_uuid()`]
+  user_id uuid [ref: > users.id, not null]
+  name varchar(120) [not null]
+  color varchar(7) [note: 'hex color (#RRGGBB)']
+  position integer [not null, note: 'ordem para drag-n-drop']
+  created_at timestamp [default: `now()`]
+  updated_at timestamp [default: `now()`]
+  
+  indexes {
+    user_id
+    (user_id, position) [composite]
+  }
+}
+
+Table platforms {
+  id uuid [pk, default: `gen_random_uuid()`]
+  user_id uuid [ref: > users.id, not null]
+  name varchar(120) [not null]
+  color varchar(7) [note: 'hex color (#RRGGBB)']
+  position integer [not null, note: 'ordem para drag-n-drop']
+  url varchar(500)
+  created_at timestamp [default: `now()`]
+  updated_at timestamp [default: `now()`]
+  
+  indexes {
+    user_id
+    (user_id, position) [composite]
+  }
+}
+
+Table courses {
+  id uuid [pk, default: `gen_random_uuid()`]
+  user_id uuid [ref: > users.id, not null]
+  area_id uuid [ref: > areas.id, not null]
+  platform_id uuid [ref: > platforms.id, not null]
+  name varchar(300) [not null]
+  description text
+  total_lessons integer [default: 0]
+  completed_lessons integer [default: 0]
+  created_at timestamp [default: `now()`]
+  updated_at timestamp [default: `now()`]
+  
+  indexes {
+    user_id
+    area_id
+    platform_id
+    (user_id, area_id) [composite]
+    (user_id, platform_id) [composite]
+  }
+}
+
+Table lessons {
+  id uuid [pk, default: `gen_random_uuid()`]
+  user_id uuid [ref: > users.id, not null]
+  course_id uuid [ref: > courses.id, not null]
+  name varchar(300) [not null]
+  position integer [not null, note: 'ordem dentro do curso']
+  completed boolean [default: false]
+  completed_at timestamp
+  created_at timestamp [default: `now()`]
+  updated_at timestamp [default: `now()`]
+  
+  indexes {
+    user_id
+    course_id
+    (course_id, position) [composite]
+    (user_id, completed)
+  }
+}
+
+// ============================================
+// ATIVIDADES E LOGS
+// ============================================
+
+Table activity_log {
+  id uuid [pk, default: `gen_random_uuid()`]
+  user_id uuid [ref: > users.id, not null]
+  activity_type enum('lesson_completed', 'course_added') [not null]
+  related_entity_type enum('lesson', 'course') [not null]
+  related_entity_id uuid [not null]
+  metadata jsonb [note: 'informações contextuais (course_name, area_name, etc)']
+  created_at timestamp [default: `now()`]
+  
+  indexes {
+    user_id
+    (user_id, created_at) [composite, note: 'para atividades recentes']
+    created_at
+  }
+}
+
+// ============================================
+// NOTAS E OBSERVAÇÕES DO SCHEMA
+// ============================================
+
+Note {
+  "RLS POLICIES (Supabase)":
+  "- users: SELECT/UPDATE apenas do próprio usuário"
+  "- areas: SELECT/INSERT/UPDATE/DELETE apenas do owner (user_id)"
+  "- platforms: SELECT/INSERT/UPDATE/DELETE apenas do owner (user_id)"
+  "- courses: SELECT/INSERT/UPDATE/DELETE apenas do owner (user_id)"
+  "- lessons: SELECT/INSERT/UPDATE/DELETE apenas do owner (user_id)"
+  "- activity_log: SELECT apenas do owner (user_id)"
+  
+  "VALIDAÇÕES NO BANCO":
+  "- emails devem ser únicos e validados"
+  "- nomes de áreas/plataformas/cursos/aulas: não vazios"
+  "- color deve ser formato hex válido (#RRGGBB)"
+  "- position deve ser >= 0"
+  "- completed_lessons nunca > total_lessons"
+  
+  "PERFORMANCE":
+  "- Índices compostos para queries frequentes (user_id + outros)"
+  "- created_at indexado para ordenação por data"
+  "- user_id sempre presente (multi-tenancy)"
+  
+  "CASCATA DE DELETES":
+  "- Deletar usuario: cascata em todas as tabelas associadas"
+  "- Deletar area: cascata em courses, lessons, activity_log"
+  "- Deletar course: cascata em lessons, activity_log"
+}
